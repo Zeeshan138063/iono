@@ -1,0 +1,19 @@
+import django
+django.setup()
+	
+
+from plantedge.facade.vegetationIndex import VegetationIndex
+from plantedge.models import *
+aoi = Aoi.objects.get(pk=204)
+plot = Plots.objects.get(id = 28)
+from datetime import date
+print(date.today())
+params = {
+                'aoi_id': aoi.id,
+                'start_date': aoi.date_planted,
+                'end_date': date.today(),
+                'plot_id': plot.id,
+            }
+f_vegetation_Index = VegetationIndex()
+f_vegetation_Index.manage_index_creation(params)
+

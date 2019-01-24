@@ -1,0 +1,435 @@
+from fastai.plots import *
+from IPython.display import Image, display
+from osgeo import gdal
+import rasterio
+import csv
+from django.conf import settings
+from rest_framework.decorators import api_view
+
+from plantedge.models import *
+from datetime import date
+from rest_framework.decorators import api_view
+
+
+
+
+@api_view(['GET'])
+def start_analysis_cron(request):
+
+    try:
+        petaks = pd.read_csv('./plot_analysis_new.csv')
+
+        veg_indices = {'ndvi', 'ndvi_80', 'ndvi_95', 'gndvi', 'gndvi_80', 'gndvi_95', 'evi', 'evi_80', 'evi_95', 'rvi',
+                       'rvi_80', 'rvi_95', 'ndwi', 'ndwi_95', 'ndwi_80', 'ndwi_20', 'ndwi_05'}
+
+        age_dict = {"age1": [1, 2],
+                    "age2": [3, 4],
+                    "age3": [5, 6],
+                    "age4": [7, 9],
+                    "age5": [10, 12],
+                    "age6": [13, 24],
+                    "age7": [25, 48],
+                    }
+
+        quantiles = [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99]
+
+        quantile_df = pd.DataFrame(index=quantiles)
+        variants = ['Epel', 'Acra']
+
+        for variant in variants:
+            for veg_index in veg_indices:
+                for age in age_dict:
+                    base_index = veg_index.split('_')
+
+                    # Query for fetching the Corresponding Data from DB
+                    plots = Plots.objects.filter(variant=variant)
+                    # For now using the whole table for analysis purpose
+
+                    all_preparation_stat = PreparationStat.objects.filter(plot_id_consol__in=plots,
+                                                                          age_at_obs_months__in=age_dict[age])
+                    count_type = f'{base_index[0]}_count' + '__gt'
+                    search_string = '2000'
+                    all_preparation_stat = all_preparation_stat.filter(**{count_type: search_string})
+
+                    if all_preparation_stat.count() > 0:
+                        columns = all_preparation_stat[0].__dict__
+                        columns.__delitem__('_state')
+                        columns.__delitem__('id')
+                        columns = columns.keys()
+                        petaks = pd.DataFrame([[getattr(i, j) for j in columns] for i in all_preparation_stat],
+                                              columns=columns)
+
+                        df = petaks.loc[(petaks['age_at_obs_months'] >= age_dict[age][0])
+                                        & (petaks['age_at_obs_months'] <= age_dict[age][1])
+                                        & (petaks['variant'] == variant)
+                                        & (petaks[f'{base_index[0]}_count'] > 2000), [veg_index]]
+
+                        quantile_df[f"{veg_index}_{variant}_{age_dict[age][0]}_{age_dict[age][1]}"] = df.quantile(
+                            quantiles)
+
+                    else:
+                        quantile_df[f"{veg_index}_{variant}_{age_dict[age][0]}_{age_dict[age][1]}"]={
+                                                                                                    "0.01": 'null',
+                                                                                                    "0.1": 'null',
+                                                                                                    "0.25": 'null',
+                                                                                                    "0.5": 'null',
+                                                                                                    "0.75": 'null',
+                                                                                                    "0.9": 'null',
+                                                                                                    "0.99": 'null'
+                                                                                                                }
+                        continue
+        # here to dump json
+        quantile_df
+        # send the quantile_df to DB
+        Thresholds.objects.create(date_generated=date.today(), quantile_df=quantile_df.to_json())
+        return True
+    except:
+        return False
+
+# Cron Job
+@api_view(['GET'])
+def create_graph_cron(request):
+    try:
+        max_indices = []
+        analysis = Analysis()
+        # Get the latest Record from Threshold table
+        # latest_record = Thresholds.objects.latest('date_generated')
+        latest_record = Thresholds.objects.get(id=13)
+        quantile_df = pd.read_json(latest_record.quantile_df,keep_default_dates=False)
+
+        quantiles = [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99]
+        quantile_df.index = quantiles
+
+        all_preparation_stat = PreparationStat.objects.all()
+        all_asset_in_plot = Aoi.objects.all()
+
+        columns = all_preparation_stat[0].__dict__
+        columns.__delitem__('_state')
+        columns.__delitem__('id')
+
+        columns = columns.keys()
+
+        petaks = pd.DataFrame([[getattr(i, j) for j in columns] for i in all_preparation_stat], columns=columns)
+
+        adjust = False
+        # (no need for NDWI now)
+        veg_indices = ['ndvi', 'ndvi_80', 'ndvi_95', 'evi', 'evi_95', 'gndvi', 'gndvi_95', 'rvi', 'rvi_95']
+        # veg_indices = ['ndvi', 'ndvi_80', 'ndvi_95', 'evi']
+
+        # all AOI are here selected from DB
+        for plot_id in all_asset_in_plot:
+            plot_id = plot_id.id
+            if not petaks.loc[petaks['plot_id'] == plot_id].empty:
+                subplot_number = 0
+                plt.figure(plot_id, figsize=(60, 15))
+                # plt.subplot(nrows=3,ncols=3)
+                petaks['date'] = pd.to_datetime(petaks['date'])
+                for veg_index in veg_indices:
+
+                    df = petaks.loc[
+                        petaks['plot_id'] == plot_id, ['date', 'planted_date', 'variant', 'age_at_obs_months',
+                                                       veg_index]]
+
+                    if adjust:
+                        for i, row in df.iterrows():
+                            df.at[i, veg_index] *= max_indices.at[row['date'], f"{veg_index}_adj"]
+                        df.dropna()
+
+                    df = df.set_index('date')
+
+                    # df['rolling_max'] = df[veg_index].rolling('60d', min_periods=1).mean()
+
+                    df['rolling_max'] = df[veg_index].rolling('60d', min_periods=1).max()
+
+                    variant = df['variant'].iloc[0]
+                    planed_date = df['planted_date'].iloc[0]
+                    min_age = df.age_at_obs_months.min()
+                    max_age = df.age_at_obs_months.max()
+
+                    subplot_number += 1
+
+                    plt.subplot(1, len(veg_indices), subplot_number)
+                    # plt.subplot(len(veg_indices),1 , subplot_number)
+
+
+                    plt.plot(df.index.values, df[veg_index], 'kx')
+                    plt.plot(df.index.values, df['rolling_max'], 'b-')
+                    # plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+
+                    # plot growing stage threshold
+
+                    threshold_low = analysis.get_threshold(veg_index=veg_index, variant=variant, threshold=0.25,
+                                                       quantile_df=quantile_df, ages=df['age_at_obs_months'])
+                    threshold_high = analysis.get_threshold(veg_index=veg_index, variant=variant, threshold=0.90,
+                                                        quantile_df=quantile_df, ages=df['age_at_obs_months'])
+                    df['threshold_low'] = threshold_low
+                    df['threshold_high'] = threshold_high
+
+                    df_temp = df.loc[(df['age_at_obs_months'] <= 12), ['threshold_low', 'threshold_high']]
+                    plt.plot(df_temp.index.values, df_temp['threshold_low'], color="green", linestyle='--')
+                    plt.plot(df_temp.index.values, df_temp['threshold_high'], color="red", linestyle='--')
+
+                    # plot mature stage threshold
+                    if adjust:
+                        threshold_low = analysis.get_threshold(veg_index=veg_index, variant=variant, threshold=0.50,
+                                                           quantile_df=quantile_df, ages=df['age_at_obs_months'])
+                    else:
+                        threshold_low = analysis.get_threshold(veg_index=veg_index, variant=variant, threshold=0.25,
+                                                           quantile_df=quantile_df, ages=df['age_at_obs_months'])
+                    threshold_high = analysis.get_threshold(veg_index=veg_index, variant=variant, threshold=0.90,
+                                                        quantile_df=quantile_df, ages=df['age_at_obs_months'])
+                    df['threshold_low'] = threshold_low
+                    df['threshold_high'] = threshold_high
+                    df_temp = df.loc[(df['age_at_obs_months'] > 12), ['threshold_low', 'threshold_high']]
+                    plt.plot(df_temp.index.values, df_temp['threshold_low'], color="red", linestyle=':')
+                    plt.plot(df_temp.index.values, df_temp['threshold_high'], color="green", linestyle=':')
+
+                    plt.xticks(rotation='vertical')
+                    # plt.xticks(rotation='horizontal')
+                    plt.title(f"{veg_index}", fontsize=12)
+                    plt.title(f"{min_age}m", loc="left", fontsize=10)
+                    plt.title(f"{max_age}m", loc="right", fontsize=10)
+
+                plt.suptitle(f"Plot: {plot_id}   Variant: {variant}  Adjusted: {adjust}")
+                # plt.show()
+                plt.savefig(f"./storage/vi_{plot_id}_adjust_{adjust}.png")
+                # plt.savefig(f""+self._ANALYSIS_DIR_PATH+"vi_{plot_id}_adjust_{adjust}.png")
+                plt.close()
+                print('Done Successfully')
+
+
+        return True
+    except:
+        return False
+
+
+
+class Analysis():
+    def __init__(self):
+
+        self._LOCAL_ASSETS_DIR = getattr(settings, "LOCAL_ASSETS_DIR", None)
+        self._ANALYSIS_DIR_PATH = './' + self._LOCAL_ASSETS_DIR + '/'
+
+
+    def get_threshold(variant, quantile_df, threshold, ages, veg_index):
+        threshold_values = []
+        for age in ages:
+            if age >= 1 and age <= 2:
+                threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_1_2"])
+            elif age >= 3 and age <= 4:
+                threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_3_4"])
+            elif age >= 5 and age <= 6:
+                threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_5_6"])
+            elif age >= 7 and age <= 9:
+                threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_7_9"])
+            elif age >= 10 and age <= 12:
+                threshold_values = np.append(threshold_values,
+                                             quantile_df.at[threshold, f"{veg_index}_{variant}_10_12"])
+            elif age >= 13 and age <= 24:
+                threshold_values = np.append(threshold_values,
+                                             quantile_df.at[threshold, f"{veg_index}_{variant}_13_24"])
+            elif age >= 25 and age <= 48:
+                threshold_values = np.append(threshold_values,
+                                             quantile_df.at[threshold, f"{veg_index}_{variant}_25_48"])
+            else:
+                threshold_values = np.append(threshold_values, np.nan)
+        return threshold_values
+#
+#     def start_analysis(self):
+#
+#         max_indices = []
+#
+#         veg_indices = {'ndvi', 'ndvi_80', 'ndvi_95', 'gndvi', 'gndvi_80', 'gndvi_95', 'evi', 'evi_80', 'evi_95', 'rvi',
+#                        'rvi_80', 'rvi_95', 'ndwi', 'ndwi_95', 'ndwi_80', 'ndwi_20', 'ndwi_05'}
+#
+#         age_dict = {"age1": [1, 2],
+#                     "age2": [3, 4],
+#                     "age3": [5, 6],
+#                     "age4": [7, 9],
+#                     "age5": [10, 12],
+#                     "age6": [13, 24],
+#                     "age7": [25, 48],
+#                     }
+#
+#         quantiles = [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99]
+#
+#         quantile_df = pd.DataFrame(index=quantiles)
+#         variants = ['Epel', 'Acra']
+#
+#
+#         for variant in variants:
+#             for veg_index in veg_indices:
+#                 for age in age_dict:
+#                     base_index = veg_index.split('_')
+#
+#                     # Query for fetching the Corresponding Data from DB
+#                     plots = Plots.objects.filter(variant=variant)
+#                     # For now using the whole table for analysis purpose
+#
+#                     all_preparation_stat = PreparationStat.objects.filter(plot_id_consol__in=plots,
+#                                                                           age_at_obs_months__in=age_dict[age])
+#                     count_type = f'{base_index[0]}_count' + '__gt'
+#                     search_string = '2000'
+#                     all_preparation_stat = all_preparation_stat.filter(**{count_type: search_string})
+#
+#                     if all_preparation_stat.count() > 0:
+#                         columns = all_preparation_stat[0].__dict__
+#                         columns.__delitem__('_state')
+#                         columns.__delitem__('id')
+#                         columns = columns.keys()
+#                         petaks = pd.DataFrame([[getattr(i, j) for j in columns] for i in all_preparation_stat],
+#                                               columns=columns)
+#
+#                         df = petaks.loc[(petaks['age_at_obs_months'] >= age_dict[age][0])
+#                                         & (petaks['age_at_obs_months'] <= age_dict[age][1])
+#                                         & (petaks['variant'] == variant)
+#                                         & (petaks[f'{base_index[0]}_count'] > 2000), [veg_index]]
+#
+#                         quantile_df[f"{veg_index}_{variant}_{age_dict[age][0]}_{age_dict[age][1]}"] = df.quantile(
+#                             quantiles)
+#
+#                     else:
+#                         continue
+#         # here to dump json
+#         quantile_df
+#         # send the quantile_df to DB
+#         Thresholds.objects.create(date_generated=date.today(), quantile_df = quantile_df.to_json())
+#
+#
+#
+#
+#
+#         # Get the latest Record from Threshold table
+#         latest_record = Thresholds.objects.latest('date_generated')
+#         quantile_df = pd.read_json(latest_record.quantile_df)
+#
+#         all_preparation_stat = PreparationStat.objects.all()
+#         all_asset_in_plot = Aoi.objects.all()
+#
+#         columns = all_preparation_stat[0].__dict__
+#         columns.__delitem__('_state')
+#         columns.__delitem__('id')
+#
+#         columns = columns.keys()
+#
+#         petaks = pd.DataFrame([[getattr(i, j) for j in columns] for i in all_preparation_stat], columns=columns)
+#
+#         adjust = False
+#         # (no need for NDWI now)
+#         veg_indices = ['ndvi', 'ndvi_80', 'ndvi_95', 'evi', 'evi_95', 'gndvi', 'gndvi_95', 'rvi', 'rvi_95']
+#         # veg_indices = ['ndvi', 'ndvi_80', 'ndvi_95', 'evi']
+#
+#         # all AOI are here selected from DB
+#         for plot_id in all_asset_in_plot:
+#             plot_id = plot_id.id
+#             if not petaks.loc[petaks['plot_id'] == plot_id].empty:
+#                 subplot_number = 0
+#                 plt.figure(plot_id, figsize=(60, 15))
+#                 # plt.subplot(nrows=3,ncols=3)
+#                 petaks['date'] = pd.to_datetime(petaks['date'])
+#                 for veg_index in veg_indices:
+#
+#                     df = petaks.loc[
+#                         petaks['plot_id'] == plot_id, ['date', 'planted_date', 'variant', 'age_at_obs_months',
+#                                                        veg_index]]
+#
+#                     if adjust:
+#                         for i, row in df.iterrows():
+#                             df.at[i, veg_index] *= max_indices.at[row['date'], f"{veg_index}_adj"]
+#                         df.dropna()
+#
+#                     df = df.set_index('date')
+#
+#                     # df['rolling_max'] = df[veg_index].rolling('60d', min_periods=1).mean()
+#
+#                     df['rolling_max'] = df[veg_index].rolling('60d', min_periods=1).max()
+#
+#                     variant = df['variant'].iloc[0]
+#                     planed_date = df['planted_date'].iloc[0]
+#                     min_age = df.age_at_obs_months.min()
+#                     max_age = df.age_at_obs_months.max()
+#
+#                     subplot_number += 1
+#
+#                     plt.subplot(1, len(veg_indices), subplot_number)
+#                     # plt.subplot(len(veg_indices),1 , subplot_number)
+#
+#
+#                     plt.plot(df.index.values, df[veg_index], 'kx')
+#                     plt.plot(df.index.values, df['rolling_max'], 'b-')
+#                     # plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+#
+#                     # plot growing stage threshold
+#
+#                     threshold_low = self.get_threshold(veg_index=veg_index, variant=variant, threshold=0.25,
+#                                                        quantile_df=quantile_df, ages=df['age_at_obs_months'])
+#                     threshold_high = self.get_threshold(veg_index=veg_index, variant=variant, threshold=0.90,
+#                                                         quantile_df=quantile_df, ages=df['age_at_obs_months'])
+#                     df['threshold_low'] = threshold_low
+#                     df['threshold_high'] = threshold_high
+#
+#                     df_temp = df.loc[(df['age_at_obs_months'] <= 12), ['threshold_low', 'threshold_high']]
+#                     plt.plot(df_temp.index.values, df_temp['threshold_low'], color="green", linestyle='--')
+#                     plt.plot(df_temp.index.values, df_temp['threshold_high'], color="red", linestyle='--')
+#
+#                     # plot mature stage threshold
+#                     if adjust:
+#                         threshold_low = self.get_threshold(veg_index=veg_index, variant=variant, threshold=0.50,
+#                                                            quantile_df=quantile_df, ages=df['age_at_obs_months'])
+#                     else:
+#                         threshold_low = self.get_threshold(veg_index=veg_index, variant=variant, threshold=0.25,
+#                                                            quantile_df=quantile_df, ages=df['age_at_obs_months'])
+#                     threshold_high = self.get_threshold(veg_index=veg_index, variant=variant, threshold=0.90,
+#                                                         quantile_df=quantile_df, ages=df['age_at_obs_months'])
+#                     df['threshold_low'] = threshold_low
+#                     df['threshold_high'] = threshold_high
+#                     df_temp = df.loc[(df['age_at_obs_months'] > 12), ['threshold_low', 'threshold_high']]
+#                     plt.plot(df_temp.index.values, df_temp['threshold_low'], color="red", linestyle=':')
+#                     plt.plot(df_temp.index.values, df_temp['threshold_high'], color="green", linestyle=':')
+#
+#                     plt.xticks(rotation='vertical')
+#                     # plt.xticks(rotation='horizontal')
+#                     plt.title(f"{veg_index}", fontsize=12)
+#                     plt.title(f"{min_age}m", loc="left", fontsize=10)
+#                     plt.title(f"{max_age}m", loc="right", fontsize=10)
+#
+#                 plt.suptitle(f"Plot: {plot_id}   Variant: {variant}  Adjusted: {adjust}")
+#                 # plt.show()
+#                 plt.savefig(f"./storage/vi_{plot_id}_adjust_{adjust}.png")
+#                 # plt.savefig(f""+self._ANALYSIS_DIR_PATH+"vi_{plot_id}_adjust_{adjust}.png")
+#                 plt.close()
+#                 print('Done Successfully')
+#                 return True
+
+
+
+
+# Cron Job
+
+
+
+
+#
+# def get_threshold(variant, quantile_df, threshold, ages, veg_index):
+#     threshold_values = []
+#     for age in ages:
+#         if age >= 1 and age <= 2:
+#             threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_1_2"])
+#         elif age >= 3 and age <= 4:
+#             threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_3_4"])
+#         elif age >= 5 and age <= 6:
+#             threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_5_6"])
+#         elif age >= 7 and age <= 9:
+#             threshold_values = np.append(threshold_values, quantile_df.at[threshold, f"{veg_index}_{variant}_7_9"])
+#         elif age >= 10 and age <= 12:
+#             threshold_values = np.append(threshold_values,
+#                                          quantile_df.at[threshold, f"{veg_index}_{variant}_10_12"])
+#         elif age >= 13 and age <= 24:
+#             threshold_values = np.append(threshold_values,
+#                                          quantile_df.at[threshold, f"{veg_index}_{variant}_13_24"])
+#         elif age >= 25 and age <= 48:
+#             threshold_values = np.append(threshold_values,
+#                                          quantile_df.at[threshold, f"{veg_index}_{variant}_25_48"])
+#         else:
+#             threshold_values = np.append(threshold_values, np.nan)
+#     return threshold_values
