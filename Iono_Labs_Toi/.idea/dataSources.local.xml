@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="dataSourceStorageLocal">
+    <data-source name="Django default" uuid="516325ee-2c70-43ad-9fda-25c0aefbfda7">
+      <database-info product="PostgreSQL" version="9.5.14" jdbc-version="4.2" driver-name="PostgreSQL JDBC Driver" driver-version="42.2.2">
+        <identifier-quote-string>&quot;</identifier-quote-string>
+      </database-info>
+      <case-sensitivity plain-identifiers="lower" quoted-identifiers="exact" />
+      <user-name>iono_labs</user-name>
+      <user-password>df9bdf98df99df9edf9f</user-password>
+      <resolve-scope>plantedge_iono:iono_labs,public</resolve-scope>
+    </data-source>
+  </component>
+</project>

@@ -1,0 +1,27 @@
+
+
+"{\"plot_record\": \"./storage/47-20180708_052214_103c\", \"plot_id\": 48, 
+\"plot_id_consol\": 8, \"date\": \"2018-07-08\", \"variant\": null, \
+"planted_date\": \"2018-08-15 11:00:00+00:00\", \"age_at_obs_months\": -1, 
+\"min_rgb_haze_indicator\": 0.2543078198889147, \"likely_haze\": 1,
+ \"min_rgb_bad_fraction\": 1.0, \"likely_cloud\": 1, \"ndvi\": 0.11950473844540468, 
+\"ndvi_95\": 0.12477492297926336, \"ndvi_80\": 0.12464164431342911, \"ndvi_std\": 0.006289028875484093,
+ \"ndvi_count\": 5, \"gndvi\": NaN, \"gndvi_95\": NaN, \"gndvi_80\": NaN, \"gndvi_std\": NaN, 
+\"gndvi_count\": 0, \"evi\": NaN, \"evi_95\": NaN, \"evi_80\": NaN, \"evi_std\": NaN, 
+\"evi_count\": 0, \"rvi\": NaN, \"rvi_95\": NaN, \"rvi_80\": NaN, \"rvi_std\": NaN, 
+\"rvi_count\": 0, \"dirt\": 0.0054925840384360755, \"dirt_95\": 0.01356828141815762, 
+\"dirt_std\": 0.004338505825734304, \"dirt_count\": 1228, \"ndwi\": -0.03986853380094553, 
+\"ndwi_95\": -0.02682576196498561, \"ndwi_80\": -0.033038344053028544, \"ndwi_20\": -0.04566235741197807, 
+\"ndwi_05\": -0.0535755286232802, \"ndwi_std\": 0.010160651987378698, \"ndwi_count\": 2832, \"ndwi_high_count\": 2832}"
+
+
+
+
+
+
+
+"gndvi\": NaN, \"gndvi_95\": NaN, \"gndvi_80\": NaN, \"gndvi_std\": NaN, 
+
+evi_count\": 0, \"rvi\": NaN, \"rvi_95\": NaN, \"rvi_80\": NaN, \"rvi_std\": NaN,
+
+"evi_count\": 0, \"rvi\": NaN, \"rvi_95\": NaN, \"rvi_80\": NaN, \"rvi_std\": NaN, 

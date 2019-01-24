@@ -1,0 +1,135 @@
+* create/launch instance:
+	https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EC2_GetStarted.html?icmpid=docs_ec2_console#ec2-launch-instance
+	Ubuntu Server 18.04 LTS (HVM), SSD Volume Type 
+
+* select  t3.medium 
+* volume of instance can be modified
+* save .pem file
+
+
+
+
+** increase volume of instance letter if necessery:
+	lsblk     (view partition list)
+	from management console increase size , then from ssh 
+	sudo growpart /dev/nvme0n1 1
+	
+
+** Access instance:
+	change permission .pem file :
+	chmod 400 devenv-key.pem
+
+	ssh -i path_to.pem ubuntu@dns_host   (example)
+	ssh -i aws_toi_key.pem ubuntu@18.223.126.184	
+
+
+** install the Anaconda package for the installation packages:
+	Ref: https://www.digitalocean.com/community/tutorials/how-to-install-the-anaconda-python-distribution-on-ubuntu-16-04 
+
+
+** Activate Conda Environment:
+	$ source /home/ubuntu/anaconda3/bin/activate
+
+
+** cd into /opt/apps/ :
+
+** git clone Project:
+	git clone https://asimazizoc@bitbucket.org/ionolabs/plantedge.git
+
+
+** install requirements:
+	$ pip install -r requirements.txt
+
+    * Optional: $ pip --no-cache-dir install -r requirements.txt // not load from cache
+
+	$ conda install gdal
+	$ conda upgrade numpy
+	$ conda install -c conda-forge python-fmask==0.4.5
+
+
+** Creating a PostgreSQL DB Instance
+	https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_GettingStarted.CreatingConnecting.PostgreSQL.html
+
+
+
+** db instance (aws-toi-db-instance)
+	=> plantedge_iono (user: oneclout, password: oneclout)
+
+
+** install postgres on aws environment:
+	https://www.digitalocean.com/community/tutorials/how-to-install-and-use-postgresql-on-ubuntu-16-04
+
+** Add security groups permissions:
+	https://medium.com/@justinminh225/venture-into-amazon-web-service-deployment-with-ec2-and-rds-postgres-from-a-z-d3369f16e99d
+
+
+
+
+					 	=======	Access, Update Server Code =======
+
+server link 
+http://ec2-18-223-126-184.us-east-2.compute.amazonaws.com/
+http://ec2-18-223-126-184.us-east-2.compute.amazonaws.com/admin
+user          : admin
+password : oneclout123
+email        : admin@mail.com
+Please enter password for encrypted keyring
+testing1234
+
+ssh -i aws_toi_key.pem ubuntu@18.223.126.184
+sudo su root 
+
+source /home/ubuntu/anaconda3/bin/activate
+cd /opt/apps/plantedge/
+git pull 
+
+python manage.py collectstatic
+python manage.py makemigrations
+
+
+* if error of merge in makemigrations
+	python manage.py makemigrations --merge
+
+* if update requirements new pakage:
+	pip install -r requirements.txt
+
+python manage.py migrate
+
+
+sudo systemctl restart gunicorn
+sudo systemctl daemon-reload
+sudo systemctl restart gunicorn
+sudo nginx -t && sudo systemctl restart nginx
+
+** to stop/start redis server 
+
+	start  : sudo service redis-server start
+	stop   : sudo service redis-server stop
+	status : sudo service redis-server status
+
+** to stop/start celery worker
+
+	log level view  : celery --app=plantedge.tasks worker --loglevel=INFO
+	start   	: celery multi start w1 -A plantedge.tasks -l info
+	restart 	: celery  multi restart w1 -A plantedge.tasks -l info
+	stop    	: celery multi stopwait w1 -A plantedge.tasks -l info
+
+
+
+* additional things:
+  
+  delete redis tasks if no need of them.
+  redis-cli
+  FLUSHALL
+
+  chgrp -R www-data plantedge/
+
+  
+  unzip source.zip -d destination_dir
+
+
+* Second log which can you take a look is Syslog:
+	sudo nano /var/log/syslog
+* Nginx error log 
+	sudo nano /var/log/nginx/error.log
+

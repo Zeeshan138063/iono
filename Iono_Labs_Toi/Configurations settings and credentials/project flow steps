@@ -1,0 +1,12 @@
+now that we want to productionize it, don't you think the best way will be to:
+1. query planet api
+2. download assets
+3. run some analysis like creating ndvi, evi, dirt etc etc
+4. run the statistical analysis on each of the stats (as per the snippet I sent you in slack, from preparation.ipynb, e.g. for ndvi_man, ndvi80, evi_mean, evi_80, haze etc)
+5. save the statiscial analysis into the associated asset
+4. save to the ndvi,evi,dirt to csv
+5. save to s3
+6. delete copy in django machine
+-------------------------- in separate daily task -------------------
+7. run cohort analysis (in analysis.ipynb) by querying the asset table
+8. generate plots and alerts

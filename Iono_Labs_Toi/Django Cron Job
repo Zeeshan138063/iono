@@ -1,0 +1,40 @@
+Cron Job Testing 
+
+For Testing CronJOb on terminal  
+
+PATH OF VIRTUAL ENVIRONMENT    ----> THEN PATH OF manage.py ----> AND then crontab run ---> and ID of the cron job(ID of cron job can be get by using the command on Point #8 inside of virtual environment  ) 
+e.g.       /home/zeeshan/Desktop/venu/iono_env/bin/python /home/zeeshan/Desktop/project/plantedge/manage.py crontab run daa2104f6fc930a7984ee0b43f3b75ee 
+
+ 
+
+ 
+
+Time Setting of Cron Job 
+
+ 
+
+ For time setting in Cron Job  use this link---->   https://crontab.guru/ 
+
+for checking all cron jobs    ====>  crontab –e   ,   crontab –l  on server 
+
+ 
+
+Helping Links 
+
+Setting For Cron Job  https://pypi.org/project/django-crontab/ 
+
+Also https://django-cron.readthedocs.io/en/latest/installation.html 
+
+ 
+
+Commands For Cron Jobs 
+
+ 
+
+Command to add cronjob    ===>     python manage.py crontab add 
+
+Command to show cronjob    ===>   python manage.py crontab show 
+
+Command to remove cronjob    ===>   python manage.py crontab remove 
+
+ 
